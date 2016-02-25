@@ -7,12 +7,9 @@
     <arg name="load_robot_description" value="true"/>
   </include>
 
-  <node pkg="tf" type="static_transform_publisher" name="virtual_joint_broadcaster_0" args="0 0 0 0 0 0 odom_combined segment_0 100" />
-  <!-- <node pkg="tf" type="static_transform_publisher" name="virtual_joint_broadcaster_1" args="0 0 0 0 0 0 odom_combined world 100" /> -->
-
-  <node pkg="tf" type="static_transform_publisher" name="world_broadcaster" args="-0.5 0 0.35 0 0 0 map world 100" />
+  <node pkg="tf" type="static_transform_publisher" name="world_broadcaster" args="0 0 0 0 0 0 map world 100" />
   <node pkg="tf" type="static_transform_publisher" name="camera_broadcaster" args="-0.5 0 0.35 0 0 0 map camera_link 100" />
-  <node pkg="tf" type="static_transform_publisher" name="odom_broadcaster" args="0 0 0 0 0 0 map odom_combined 100" />
+  <node pkg="tf" type="static_transform_publisher" name="odom_broadcaster" args="0 0 0 0 0 0 map segment_0 100" />
   <node pkg="tf" type="static_transform_publisher" name="tracker_broadcaster" args="0 0 0 0 0 0 camera_link openni_depth_frame 100" />
 
   <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">

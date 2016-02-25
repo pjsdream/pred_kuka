@@ -116,6 +116,7 @@ void MoveKukaIIWA::run(const std::string& group_name)
     }
 
     loadStaticScene();
+    loadActions();
 
     // planner initialization
     group_name_ = group_name;
@@ -157,9 +158,12 @@ void MoveKukaIIWA::run(const std::string& group_name)
 
     display_publisher_ = node_handle_.advertise<moveit_msgs::DisplayTrajectory>("/move_group/display_planned_path", 1, true);
     vis_marker_array_publisher_ = node_handle_.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 100, true);
+    visual_publisher_ = node_handle_.advertise<visualization_msgs::MarkerArray>("visual", 100);
 
-    ros::WallDuration sleep_time(0.01);
+    ros::WallDuration sleep_time(0.5);
     sleep_time.sleep();
+
+    drawIndoorVisual();
 
     ///////////////////////////////////////////////////////
 
@@ -195,16 +199,20 @@ void MoveKukaIIWA::run(const std::string& group_name)
 
 
     moveit_msgs::DisplayTrajectory display_trajectory;
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < 1; ++i)
     {
 
         std::vector<Eigen::Affine3d> end_effector_poses;
         std::vector<robot_state::RobotState> robot_states;
+        fflush(stdout);
         if (initTask(end_effector_poses, robot_states) == false)
             continue;
 
         for (int index = 0; index < end_effector_poses.size() - 1; ++index)
         {
+            printf("index %d\n", index);
+            fflush(stdout);
+
             moveit_msgs::MotionPlanResponse response;
             planning_interface::MotionPlanRequest req;
             planning_interface::MotionPlanResponse res;
@@ -236,8 +244,6 @@ void MoveKukaIIWA::run(const std::string& group_name)
             double duration;
             //node_handle_.getParam("/itomp_planner/trajectory_duration", duration);
             //node_handle_.setParam("/itomp_planner/trajectory_duration", duration - 1.0);
-
-            break;
         }
 
         double current_time = ros::Time::now().toSec();
@@ -268,11 +274,6 @@ void MoveKukaIIWA::run(const std::string& group_name)
 
 bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, std::vector<robot_state::RobotState>& robot_states)
 {
-    const std::string end_effector_name = "revetting_tcp";
-
-    //const double waypoint_offset = 90 * 0.001;
-    const double waypoint_offset = 45 * 0.001;
-
     end_effector_poses.resize(0);
 
     robot_state::RobotState& start_state = planning_scene_->getCurrentStateNonConst();
@@ -280,50 +281,32 @@ bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, st
     {
         start_state = *last_goal_state_;
     }
-    const Eigen::Affine3d& start_frame = start_state.getGlobalLinkTransform(end_effector_name);
-    //end_effector_poses.push_back(start_frame);
 
-    // set task
-    std::vector<TASK_FRAME_INDEX> task_frame_indices;
-    /*
-    int frame_row = rand() % 10;
-    int frame_col = rand() % 65;
-    int frame_dir = rand() % 2;
-    */
-    int frame_row = 0;
-    int frame_col = 55;
-    int frame_dir = 1;
-    task_frame_indices.push_back(TASK_FRAME_INDEX(frame_row, frame_col, frame_dir));
-    task_frame_indices.push_back(TASK_FRAME_INDEX(frame_row, frame_col, frame_dir));
-    task_frame_indices.push_back(TASK_FRAME_INDEX(frame_row, frame_col, frame_dir));
-    task_frame_indices.push_back(TASK_FRAME_INDEX(frame_row, frame_col, frame_dir));
+    Eigen::Matrix3d rotation;
+    rotation = Eigen::AngleAxisd(-M_PI, Eigen::Vector3d(1, 0, 0));
 
-    for (int i = 0; i < task_frame_indices.size(); ++i)
+    // set tasks
+    for (int i = 0; i < action_targets_.size(); ++i)
     {
-        // add rivet magazine frames
-        Eigen::Affine3d magazine_frame = Eigen::Affine3d::Identity();
-        magazine_frame.translation() *= 0.001;
-        Eigen::Affine3d magazine_frame_waypoint_frame = magazine_frame;
-        magazine_frame_waypoint_frame.translation() += magazine_frame_waypoint_frame.linear() * Eigen::Vector3d(0, 0, -waypoint_offset);
+        Eigen::Affine3d start_frame = Eigen::Affine3d::Identity();
+        start_frame.translate(action_source_);
+        start_frame.rotate(rotation);
+        end_effector_poses.push_back(start_frame);
 
-        end_effector_poses.push_back(magazine_frame_waypoint_frame);
-        //end_effector_poses.push_back(magazine_frame);
-        //end_effector_poses.push_back(magazine_frame_waypoint_frame);
-
-
-        // shelf rivet frames
-        const TASK_FRAME_INDEX& frame_index = task_frame_indices[i];
+        const int target_index = i;
         Eigen::Affine3d goal_frame = Eigen::Affine3d::Identity();
-        goal_frame.translation() *= 0.001;
-        Eigen::Affine3d goal_final_frame = goal_frame;
-        goal_final_frame.translation() += goal_final_frame.linear() * Eigen::Vector3d(0, 0, waypoint_offset);
+        goal_frame.translate(action_targets_[target_index]);
+        goal_frame.rotate(rotation);
         end_effector_poses.push_back(goal_frame);
-        //end_effector_poses.push_back(goal_final_frame);
-        //end_effector_poses.push_back(goal_frame);
     }
 
+    Eigen::Affine3d start_frame = Eigen::Affine3d::Identity();
+    start_frame.translate(action_source_);
+    start_frame.rotate(rotation);
+    end_effector_poses.push_back(start_frame);
 
-    const bool read_from_file = true;
+
+    const bool read_from_file = false;
     const char filename[] = "6-2.txt";
 
     robot_states.resize(end_effector_poses.size(), start_state);
@@ -337,15 +320,18 @@ bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, st
     {
         for (int i = 0; i < robot_states.size(); ++i)
         {
+            std::cout << end_effector_poses[i].matrix() << std::endl << std::endl;
+            fflush(stdout);
+
             robot_states[i].update();
             if (computeIKState(robot_states[i], end_effector_poses[i]) == false)
             {
-                ROS_INFO("[%d:%d:%d] : Fail", frame_row, frame_col, frame_dir);
+                ROS_INFO("IK Fail");
                 return false;
             }
         }
 
-        ROS_INFO("[%d:%d:%d] : Success", frame_row, frame_col, frame_dir);
+        ROS_INFO("IK Success");
 
         //writeStartGoalStates("tmp.txt", robot_states);
     }
@@ -356,7 +342,7 @@ bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, st
 void MoveKukaIIWA::initStartGoalStates(planning_interface::MotionPlanRequest& req, const std::vector<Eigen::Affine3d>& end_effector_poses,
                                        std::vector<robot_state::RobotState>& robot_states, int index)
 {
-    const std::string end_effector_name = "revetting_tcp";
+    const std::string end_effector_name = "segment_7";
 
     drawPath(index, end_effector_poses[index].translation(), end_effector_poses[index + 1].translation());
     ros::WallDuration sleep_t(0.001);
@@ -524,6 +510,97 @@ void MoveKukaIIWA::loadStaticScene()
     planning_scene_diff_publisher_.publish(planning_scene_msg);
 }
 
+void MoveKukaIIWA::loadActions()
+{
+    std::vector<double> actions;
+    node_handle_.getParam("/itomp_planner/action_positions", actions);
+    for (int i=0; i<actions.size() / 3; i++)
+        action_targets_.push_back( Eigen::Vector3d( actions[3*i+0], actions[3*i+1], actions[3*i+2] ) );
+
+    node_handle_.getParam("/itomp_planner/source_position", actions);
+    action_source_ = Eigen::Vector3d( actions[0], actions[1], actions[2] );
+}
+
+void MoveKukaIIWA::drawIndoorVisual()
+{
+    visualization_msgs::Marker marker;
+    visualization_msgs::MarkerArray marker_array;
+
+    marker.header.stamp = ros::Time();
+    marker.header.frame_id = "world";
+    marker.pose.orientation.w = 1.0;
+    marker.pose.orientation.x = 0.0;
+    marker.pose.orientation.y = 0.0;
+    marker.pose.orientation.z = 0.0;
+
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.type = visualization_msgs::Marker::CUBE;
+    marker.ns = "indoor";
+
+    marker.color.r = 6. / 8;
+    marker.color.g = 6. / 8;
+    marker.color.b = 6. / 8;
+    marker.color.a = 1.0;
+
+    marker.scale.x = 2.0 * 2.0;
+    marker.scale.y = 3.0 * 2.0;
+    marker.scale.z = 3.0 * 2.0;
+
+    marker.id = 0;
+    marker.pose.position.x = 3.7;
+    marker.pose.position.y = 0.0;
+    marker.pose.position.z = 0.8;
+    marker_array.markers.push_back(marker);
+
+    marker.id = 1;
+    marker.pose.position.x = 0.0;
+    marker.pose.position.y = 0.0;
+    marker.pose.position.z = -3.7;
+    marker_array.markers.push_back(marker);
+
+
+    std_msgs::ColorRGBA red;
+    red.r = 1;
+    red.g = 0;
+    red.b = 0;
+    red.a = 1;
+    std_msgs::ColorRGBA blue;
+    blue.r = 0;
+    blue.g = 0;
+    blue.b = 1;
+    blue.a = 1;
+
+    marker.ns = "action";
+    marker.id = 0;
+    marker.type = visualization_msgs::Marker::CUBE_LIST;
+    marker.scale.x = 0.1;
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+    marker.pose.position.x = 0.0;
+    marker.pose.position.y = 0.0;
+    marker.pose.position.z = 0.0;
+
+    geometry_msgs::Point point;
+    for (int i=0; i<action_targets_.size(); i++)
+    {
+        point.x = action_targets_[i](0);
+        point.y = action_targets_[i](1);
+        point.z = action_targets_[i](2);
+        marker.points.push_back(point);
+        marker.colors.push_back(red);
+    }
+
+    point.x = action_source_(0);
+    point.y = action_source_(1);
+    point.z = action_source_(2);
+    marker.points.push_back(point);
+    marker.colors.push_back(blue);
+
+    marker_array.markers.push_back(marker);
+
+    visual_publisher_.publish(marker_array);
+}
+
 void MoveKukaIIWA::renderStartGoalStates(robot_state::RobotState& start_state, robot_state::RobotState& goal_state)
 {
     // display start / goal states
@@ -579,7 +656,7 @@ bool MoveKukaIIWA::isStateCollide(const robot_state::RobotState& state)
 {
     collision_detection::CollisionRequest collision_request;
     collision_detection::CollisionResult collision_result;
-    collision_request.verbose = false;
+    collision_request.verbose = true;
     collision_request.contacts = false;
 
     planning_scene_->checkCollisionUnpadded(collision_request, collision_result, state);
@@ -741,7 +818,7 @@ void MoveKukaIIWA::drawResults(moveit_msgs::DisplayTrajectory& display_trajector
     ros::NodeHandle node_handle;
     ros::Publisher publisher = node_handle.advertise<visualization_msgs::MarkerArray>("result", 10);
 
-    ros::Duration(3.0).sleep();
+    ros::Duration(1.0).sleep();
 
     const int step = 10;
 
@@ -834,7 +911,7 @@ void MoveKukaIIWA::animateResults(moveit_msgs::DisplayTrajectory& display_trajec
     ros::NodeHandle node_handle;
     ros::Publisher publisher = node_handle.advertise<visualization_msgs::MarkerArray>("result_video", 10);
 
-    ros::Duration(3.0).sleep();
+    ros::Duration(1.0).sleep();
 
     const int step = 10;
 
