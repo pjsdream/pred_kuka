@@ -25,7 +25,7 @@ protected:
     void drawIndoorVisual();
         void initStartGoalStates(planning_interface::MotionPlanRequest& req, const std::vector<Eigen::Affine3d>& end_effector_poses,
                                  std::vector<robot_state::RobotState>& robot_states, int index = 0);
-        bool initTask(std::vector<Eigen::Affine3d>& end_effector_poses, std::vector<robot_state::RobotState>& robot_states);
+        bool initTask(std::vector<Eigen::Affine3d>& end_effector_poses, std::vector<robot_state::RobotState>& robot_states, int action);
     bool isStateCollide(const robot_state::RobotState& state);
     bool isStateSingular(robot_state::RobotState& state);
 
@@ -47,6 +47,10 @@ protected:
     ros::Publisher display_publisher_;
     ros::Publisher vis_marker_array_publisher_;
     ros::Publisher visual_publisher_;
+    ros::Publisher planning_time_publisher_;
+    ros::Publisher result_publisher_;
+    ros::Publisher result_video_publisher_;
+    ros::Subscriber planning_request_subscriber_;
 
     std::vector<Eigen::Vector3d> action_targets_;
     Eigen::Vector3d action_source_;

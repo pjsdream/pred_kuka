@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <vector>
 #include <queue>
+#include <string>
 
 
 
@@ -71,13 +72,6 @@ int main(int argc, char** argv)
     ROS_INFO("motion_planner");
     ros::NodeHandle nh("/move_itomp");
 
-    ros::Publisher planning_time_publisher_;
-    planning_time_publisher_ = nh.advertise<std_msgs::Float64>("planning_time", 100);
-    ros::Duration(1.0).sleep();
-
-    ros::Subscriber planning_request_subscriber_;
-    planning_request_subscriber_ = nh.subscribe<std_msgs::Int32>("planning_request", 100, callbackPlanningRequest);
-
 
     move_kuka::MoveKukaIIWA* move_kuka = new move_kuka::MoveKukaIIWA(nh);
     move_kuka->run("whole_body");
@@ -103,6 +97,7 @@ MoveKukaIIWA::~MoveKukaIIWA()
 
 void MoveKukaIIWA::run(const std::string& group_name)
 {
+
     // scene initialization
     robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
     robot_model_ = robot_model_loader.getModel();
@@ -159,6 +154,10 @@ void MoveKukaIIWA::run(const std::string& group_name)
     display_publisher_ = node_handle_.advertise<moveit_msgs::DisplayTrajectory>("/move_group/display_planned_path", 1, true);
     vis_marker_array_publisher_ = node_handle_.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 100, true);
     visual_publisher_ = node_handle_.advertise<visualization_msgs::MarkerArray>("visual", 100);
+    result_publisher_ = node_handle_.advertise<visualization_msgs::MarkerArray>("/result", 10);
+    result_video_publisher_ = node_handle_.advertise<visualization_msgs::MarkerArray>("/result_video", 10);
+    planning_time_publisher_ = node_handle_.advertise<std_msgs::Float64>("/planning_time", 1);
+    planning_request_subscriber_ = node_handle_.subscribe<std_msgs::Int32>("/planning_request", 1, callbackPlanningRequest);
 
     ros::WallDuration sleep_time(0.5);
     sleep_time.sleep();
@@ -174,45 +173,32 @@ void MoveKukaIIWA::run(const std::string& group_name)
 
 
 
-    /*
+
+
+
     while (ros::ok())
     {
         ROS_INFO("Waiting for planning request");
+        fflush(stdout);
         while (ros::ok() && requests.empty()) ros::spinOnce();
         if (!ros::ok()) break;
         const int action = requests.front();
         requests.pop();
         ROS_INFO("Planning requested: %d", action);
+        fflush(stdout);
 
 
 
-        double time = 1.0;
-        ros::Duration(1.0).sleep();
-
-        std_msgs::Float64 planning_time;
-        planning_time.data = time;
-        ROS_INFO("Planning time = %lf", planning_time.data);
-        planning_time_publisher_.publish(planning_time);
-    }
-    */
-
-
-
-    moveit_msgs::DisplayTrajectory display_trajectory;
-    for (int i = 0; i < 1; ++i)
-    {
+        moveit_msgs::DisplayTrajectory display_trajectory;
 
         std::vector<Eigen::Affine3d> end_effector_poses;
         std::vector<robot_state::RobotState> robot_states;
         fflush(stdout);
-        if (initTask(end_effector_poses, robot_states) == false)
+        if (initTask(end_effector_poses, robot_states, action) == false)
             continue;
 
         for (int index = 0; index < end_effector_poses.size() - 1; ++index)
         {
-            printf("index %d\n", index);
-            fflush(stdout);
-
             moveit_msgs::MotionPlanResponse response;
             planning_interface::MotionPlanRequest req;
             planning_interface::MotionPlanResponse res;
@@ -257,11 +243,27 @@ void MoveKukaIIWA::run(const std::string& group_name)
         last_trajectory_start_time = ros::Time::now().toSec();
         last_trajectory_duration = (end_effector_poses.size() - 1) * 2.0;
 
-        break;
-    }
+        drawResults(display_trajectory);
+        animateResults(display_trajectory);
 
-    drawResults(display_trajectory);
-    animateResults(display_trajectory);
+
+
+        // robot trajectory time computation
+        double time = 0.0;
+        for (int i=0; i<display_trajectory.trajectory.size(); i++)
+            time += display_trajectory.trajectory[i].joint_trajectory.points.size();
+        double expected_time = 0.0;
+        double discretization = 0.0;
+        node_handle_.getParam("/itomp_planner/trajectory_duration", expected_time);
+        node_handle_.getParam("/itomp_planner/trajectory_discretization", discretization);
+        expected_time *= display_trajectory.trajectory.size();
+        time *= discretization;
+
+        std_msgs::Float64 planning_time;
+        planning_time.data = time - expected_time;
+        ROS_INFO("Planning time = %lf", planning_time.data);
+        planning_time_publisher_.publish(planning_time);
+    }
 
     // clean up
     itomp_planner_instance_.reset();
@@ -272,7 +274,7 @@ void MoveKukaIIWA::run(const std::string& group_name)
     ROS_INFO("Done");
 }
 
-bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, std::vector<robot_state::RobotState>& robot_states)
+bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, std::vector<robot_state::RobotState>& robot_states, int action)
 {
     end_effector_poses.resize(0);
 
@@ -286,14 +288,14 @@ bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, st
     rotation = Eigen::AngleAxisd(-M_PI, Eigen::Vector3d(1, 0, 0));
 
     // set tasks
-    for (int i = 0; i < action_targets_.size(); ++i)
+    for (int i = 0; i < 1; ++i)
     {
         Eigen::Affine3d start_frame = Eigen::Affine3d::Identity();
         start_frame.translate(action_source_);
         start_frame.rotate(rotation);
         end_effector_poses.push_back(start_frame);
 
-        const int target_index = i;
+        const int target_index = action;
         Eigen::Affine3d goal_frame = Eigen::Affine3d::Identity();
         goal_frame.translate(action_targets_[target_index]);
         goal_frame.rotate(rotation);
@@ -320,9 +322,6 @@ bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, st
     {
         for (int i = 0; i < robot_states.size(); ++i)
         {
-            std::cout << end_effector_poses[i].matrix() << std::endl << std::endl;
-            fflush(stdout);
-
             robot_states[i].update();
             if (computeIKState(robot_states[i], end_effector_poses[i]) == false)
             {
@@ -815,11 +814,6 @@ void MoveKukaIIWA::drawPath(int id, const Eigen::Vector3d& from, const Eigen::Ve
 
 void MoveKukaIIWA::drawResults(moveit_msgs::DisplayTrajectory& display_trajectory)
 {
-    ros::NodeHandle node_handle;
-    ros::Publisher publisher = node_handle.advertise<visualization_msgs::MarkerArray>("result", 10);
-
-    ros::Duration(1.0).sleep();
-
     const int step = 10;
 
     std_msgs::ColorRGBA ROBOT;
@@ -837,82 +831,80 @@ void MoveKukaIIWA::drawResults(moveit_msgs::DisplayTrajectory& display_trajector
     std::vector<std::string> link_names = robot_model_->getJointModelGroup("whole_body")->getLinkModelNames();
     link_names.push_back("segment_0");
 
-    const int num_points = display_trajectory.trajectory[0].joint_trajectory.points.size();
-
     visualization_msgs::MarkerArray ma;
 
-    visualization_msgs::Marker marker;
-    marker.header.frame_id = "segment_0";
-    marker.header.stamp = ros::Time::now();
-    marker.id = 0;
-    marker.ns = "path";
-    marker.type = visualization_msgs::Marker::LINE_STRIP;
-    marker.action = visualization_msgs::Marker::ADD;
-    marker.pose.position.x = 0;
-    marker.pose.position.y = 0;
-    marker.pose.position.z = 0;
-    marker.pose.orientation.x = 0.0;
-    marker.pose.orientation.y = 0.0;
-    marker.pose.orientation.z = 0.0;
-    marker.pose.orientation.w = 1.0;
-    marker.scale.x = 0.05;
-    marker.lifetime = ros::Duration();
-
-    for (int point=0; point<num_points; point++)
+    for (int t=0; t<display_trajectory.trajectory.size(); t++)
     {
-        geometry_msgs::Point p;
-        std_msgs::ColorRGBA c;
+        const int num_points = display_trajectory.trajectory[t].joint_trajectory.points.size();
 
-        robot_state::RobotState robot_state(robot_model_);
-        robot_state.setVariablePositions( display_trajectory.trajectory[0].joint_trajectory.points[point].positions );
-        robot_state.updateLinkTransforms();
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = "segment_0";
+        marker.header.stamp = ros::Time::now();
+        marker.id = 0;
+        marker.ns = "path" + boost::lexical_cast<std::string>(t);
+        marker.type = visualization_msgs::Marker::LINE_STRIP;
+        marker.action = visualization_msgs::Marker::ADD;
+        marker.pose.position.x = 0;
+        marker.pose.position.y = 0;
+        marker.pose.position.z = 0;
+        marker.pose.orientation.x = 0.0;
+        marker.pose.orientation.y = 0.0;
+        marker.pose.orientation.z = 0.0;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 0.05;
+        marker.lifetime = ros::Duration();
 
-        const Eigen::Affine3d& t = robot_state.getFrameTransform("revetting_tcp");
-        p.x = t.translation()(0);
-        p.y = t.translation()(1);
-        p.z = t.translation()(2);
-
-        const double s = (double)point / (num_points - 1);
-        c.r = (1-s) * 1.0 + s * 0.0;
-        c.g = (1-s) * 0.6 + s * 0.0;
-        c.b = (1-s) * 0.0 + s * 1.0;
-        c.a = 1.0;
-
-        marker.points.push_back(p);
-        marker.colors.push_back(c);
-    }
-
-    ma.markers.push_back(marker);
-
-    for (int point=0; point<num_points; point += step)
-    {
-        visualization_msgs::MarkerArray ma_point;
-
-        robot_state::RobotState robot_state(robot_model_);
-        robot_state.setVariablePositions( display_trajectory.trajectory[0].joint_trajectory.points[point].positions );
-        robot_state.updateLinkTransforms();
-        std::string ns = "path_" + boost::lexical_cast<std::string>(point);
-        robot_state.getRobotMarkers(ma_point, link_names, ROBOT, ns, ros::Duration());
-
-        for (int i=0; i<ma_point.markers.size(); i++)
+        for (int point=0; point<num_points; point++)
         {
-            ma_point.markers[i].mesh_use_embedded_materials = true;
+            geometry_msgs::Point p;
+            std_msgs::ColorRGBA c;
+
+            robot_state::RobotState robot_state(robot_model_);
+            robot_state.setVariablePositions( display_trajectory.trajectory[t].joint_trajectory.points[point].positions );
+            robot_state.updateLinkTransforms();
+
+            const Eigen::Affine3d& t = robot_state.getFrameTransform("segment_7");
+            p.x = t.translation()(0);
+            p.y = t.translation()(1);
+            p.z = t.translation()(2);
+
+            const double s = (double)point / (num_points - 1);
+            c.r = (1-s) * 1.0 + s * 0.0;
+            c.g = (1-s) * 0.6 + s * 0.0;
+            c.b = (1-s) * 0.0 + s * 1.0;
+            c.a = 1.0;
+
+            marker.points.push_back(p);
+            marker.colors.push_back(c);
         }
 
-        ma.markers.insert(ma.markers.end(), ma_point.markers.begin(), ma_point.markers.end());
+        ma.markers.push_back(marker);
+
+        for (int point=0; point<num_points; point += step)
+        {
+            visualization_msgs::MarkerArray ma_point;
+
+            robot_state::RobotState robot_state(robot_model_);
+            robot_state.setVariablePositions( display_trajectory.trajectory[t].joint_trajectory.points[point].positions );
+            robot_state.updateLinkTransforms();
+            std::string ns = "path_" + boost::lexical_cast<std::string>(t) + "_" + boost::lexical_cast<std::string>(point);
+            robot_state.getRobotMarkers(ma_point, link_names, ROBOT, ns, ros::Duration());
+
+            for (int i=0; i<ma_point.markers.size(); i++)
+            {
+                ma_point.markers[i].mesh_use_embedded_materials = true;
+            }
+
+            ma.markers.insert(ma.markers.end(), ma_point.markers.begin(), ma_point.markers.end());
+        }
     }
 
-    publisher.publish(ma);
+    result_publisher_.publish(ma);
 }
 
 
 void MoveKukaIIWA::animateResults(moveit_msgs::DisplayTrajectory& display_trajectory)
 {
-    ros::NodeHandle node_handle;
-    ros::Publisher publisher = node_handle.advertise<visualization_msgs::MarkerArray>("result_video", 10);
-
-    ros::Duration(1.0).sleep();
-
     const int step = 10;
 
     std_msgs::ColorRGBA ROBOT;
@@ -930,54 +922,57 @@ void MoveKukaIIWA::animateResults(moveit_msgs::DisplayTrajectory& display_trajec
     std::vector<std::string> link_names = robot_model_->getJointModelGroup("whole_body")->getLinkModelNames();
     link_names.push_back("segment_0");
 
-    const int num_points = display_trajectory.trajectory[0].joint_trajectory.points.size();
-
     visualization_msgs::MarkerArray ma;
 
-    visualization_msgs::Marker marker;
-    marker.header.frame_id = "segment_0";
-    marker.header.stamp = ros::Time::now();
-    marker.id = 0;
-    marker.ns = "path_ee";
-    marker.type = visualization_msgs::Marker::LINE_STRIP;
-    marker.action = visualization_msgs::Marker::ADD;
-    marker.pose.position.x = 0;
-    marker.pose.position.y = 0;
-    marker.pose.position.z = 0;
-    marker.pose.orientation.x = 0.0;
-    marker.pose.orientation.y = 0.0;
-    marker.pose.orientation.z = 0.0;
-    marker.pose.orientation.w = 1.0;
-    marker.scale.x = 0.05;
-    marker.lifetime = ros::Duration();
-
-    for (int point=0; point<num_points; point++)
+    for (int t=0; t < display_trajectory.trajectory.size(); t++)
     {
-        geometry_msgs::Point p;
-        std_msgs::ColorRGBA c;
+        const int num_points = display_trajectory.trajectory[t].joint_trajectory.points.size();
 
-        robot_state::RobotState robot_state(robot_model_);
-        robot_state.setVariablePositions( display_trajectory.trajectory[0].joint_trajectory.points[point].positions );
-        robot_state.updateLinkTransforms();
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = "segment_0";
+        marker.header.stamp = ros::Time::now();
+        marker.id = 0;
+        marker.ns = "path_ee_" + boost::lexical_cast<std::string>(t);
+        marker.type = visualization_msgs::Marker::LINE_STRIP;
+        marker.action = visualization_msgs::Marker::ADD;
+        marker.pose.position.x = 0;
+        marker.pose.position.y = 0;
+        marker.pose.position.z = 0;
+        marker.pose.orientation.x = 0.0;
+        marker.pose.orientation.y = 0.0;
+        marker.pose.orientation.z = 0.0;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 0.05;
+        marker.lifetime = ros::Duration();
 
-        const Eigen::Affine3d& t = robot_state.getFrameTransform("revetting_tcp");
-        p.x = t.translation()(0);
-        p.y = t.translation()(1);
-        p.z = t.translation()(2);
+        for (int point=0; point<num_points; point++)
+        {
+            geometry_msgs::Point p;
+            std_msgs::ColorRGBA c;
 
-        const double s = (double)point / (num_points - 1);
-        c.r = (1-s) * 1.0 + s * 0.0;
-        c.g = (1-s) * 0.6 + s * 0.0;
-        c.b = (1-s) * 0.0 + s * 1.0;
-        c.a = 1.0;
+            robot_state::RobotState robot_state(robot_model_);
+            robot_state.setVariablePositions( display_trajectory.trajectory[t].joint_trajectory.points[point].positions );
+            robot_state.updateLinkTransforms();
 
-        marker.points.push_back(p);
-        marker.colors.push_back(c);
+            const Eigen::Affine3d& t = robot_state.getFrameTransform("segment_7");
+            p.x = t.translation()(0);
+            p.y = t.translation()(1);
+            p.z = t.translation()(2);
+
+            const double s = (double)point / (num_points - 1);
+            c.r = (1-s) * 1.0 + s * 0.0;
+            c.g = (1-s) * 0.6 + s * 0.0;
+            c.b = (1-s) * 0.0 + s * 1.0;
+            c.a = 1.0;
+
+            marker.points.push_back(p);
+            marker.colors.push_back(c);
+        }
+
+        ma.markers.push_back(marker);
     }
 
-    ma.markers.push_back(marker);
-    publisher.publish(ma);
-
+    result_video_publisher_.publish(ma);
 
 
 

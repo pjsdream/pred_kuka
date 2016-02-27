@@ -1,9 +1,0 @@
-input_duration: 1.0
-input_num_pieces: 5
-
-output_duration: 1.0
-output_num_pieces: 5
-
-num_samples: 10000
-max_cluster_size: 100
-kmeans_k: 2

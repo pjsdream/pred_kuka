@@ -37,6 +37,12 @@ src/openni_recorder.cpp
 )
 target_link_libraries(openni_recorder pcpred)
 
+# application for benchmark generator
+rosbuild_add_executable(benchmark_generator
+src/benchmark_generator.cpp
+)
+target_link_libraries(benchmark_generator pcpred)
+
 # application for learning
 rosbuild_add_executable(learn_motion
 src/learn_motion.cpp
