@@ -52,6 +52,26 @@ int main(int argc, char** argv)
     }
     fclose(pfp);
 
+    char human_model_filename[128];
+    sprintf(human_model_filename, "%s/../human_upper_body.txt", directory);
+    FILE* hfp = fopen(human_model_filename, "r");
+    if (pfp == 0)
+    {
+        ROS_FATAL("Failed to access file [%s]", human_model_filename);
+        return 0;
+    }
+    fclose(hfp);
+
+    char output_filename[128];
+    sprintf(output_filename, "%s/trained.txt", directory);
+    FILE* ofp = fopen(output_filename, "w");
+    if (ofp == 0)
+    {
+        ROS_FATAL("Failed to access file [%s]", output_filename);
+        return 0;
+    }
+    fclose(ofp);
+
     ros::init(argc, argv, "learn_motion");
     ROS_INFO("learn_motion");
     ros::NodeHandle nh;
@@ -67,11 +87,24 @@ int main(int argc, char** argv)
     LearningMotion learning_motion;
     learning_motion.setVerbose();
     learning_motion.setOptions(learning_options);
+    learning_motion.setHumanModelFilename(human_model_filename);
 
     ROS_INFO("Learning start"); fflush(stdout);
     start_time = ros::Time::now().toSec();
     learning_motion.learn(directory);
     ROS_INFO("Laerning complete in %lf sec\n", ros::Time::now().toSec() - start_time); fflush(stdout);
+
+    ROS_INFO("Saving to [%s]\n", output_filename); fflush(stdout);
+    learning_motion.saveTrainedData(output_filename);
+
+
+    // load test
+    {
+        LearningMotion trained;
+        trained.setVerbose();
+        trained.loadTrainedData(output_filename);
+        trained.saveTrainedData(std::string(output_filename) + ".reopen");
+    }
 
     return 0;
 }
