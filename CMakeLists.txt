@@ -49,6 +49,18 @@ src/learn_motion.cpp
 )
 target_link_libraries(learn_motion pcpred)
 
+# application for motion prediction
+rosbuild_add_executable(motion_prediction
+src/motion_prediction.cpp
+)
+target_link_libraries(motion_prediction pcpred)
+
+# application for motion learning validation
+rosbuild_add_executable(validation
+src/validation.cpp
+)
+target_link_libraries(validation pcpred)
+
 # application for openni recorded tf publisher
 rosbuild_add_executable(playback
 src/playback.cpp

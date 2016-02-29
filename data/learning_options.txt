@@ -5,6 +5,6 @@ num_samples: 1000
 max_cluster_size: 100
 kmeans_k: 3
 
-gpr_l: 1.0
+gpr_l: 100.0
 gpr_sigma_f: 1.0
-gpr_sigma_n: 1.0
+gpr_sigma_n: 0.01
