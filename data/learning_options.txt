@@ -2,9 +2,9 @@ input_frames: 15
 output_frames: 15
 
 num_samples: 1000
-max_cluster_size: 100
+max_cluster_size: 200
 kmeans_k: 3
 
 gpr_l: 100.0
 gpr_sigma_f: 1.0
-gpr_sigma_n: 0.01
+gpr_sigma_n: 0.001

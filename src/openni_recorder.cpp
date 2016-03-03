@@ -34,6 +34,8 @@ int main(int argc, char** argv)
         bin_directory = bin_directory.substr(0, bin_directory.find_last_of('/'));
 
     char directory[128];
+    char joint_directory[128];
+    char validation_directory[128];
     char feature_filename[128];
     char human_filename[128];
     sprintf(directory, "%s/../data", bin_directory.c_str());
@@ -54,8 +56,15 @@ int main(int argc, char** argv)
     }
     fclose(fp);
 
-    sprintf(directory, "%s/J%02d", directory, action_number);
-    if (!(stat(directory, &sb) == 0 && S_ISDIR(sb.st_mode)) && mkdir(directory, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0)
+    sprintf(joint_directory, "%s/J%02d", directory, action_number);
+    if (!(stat(joint_directory, &sb) == 0 && S_ISDIR(sb.st_mode)) && mkdir(joint_directory, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0)
+    {
+        ROS_FATAL("Failed to make directory [%s]", directory);
+        return 0;
+    }
+
+    sprintf(validation_directory, "%s/V%02d", directory, action_number);
+    if (!(stat(validation_directory, &sb) == 0 && S_ISDIR(sb.st_mode)) && mkdir(validation_directory, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0)
     {
         ROS_FATAL("Failed to make directory [%s]", directory);
         return 0;
@@ -79,7 +88,69 @@ int main(int argc, char** argv)
         ROS_INFO("Recording action %d, sequence %d, duration %ds, rate %d", action_number, s, duration, param_rate);
         fflush(stdout);
 
-        sprintf(feature_filename, "%s/sequence%03d.txt", directory, s);
+        sprintf(feature_filename, "%s/J%02d/sequence%03d.txt", directory, action_number, s);
+        FILE* fp = fopen(feature_filename, "w");
+        if (fp == 0)
+        {
+            ROS_FATAL("Failed to access file [%s]", feature_filename);
+            return 0;
+        }
+        fclose(fp);
+
+        for (int i=3; i>=1; i--)
+        {
+            ROS_INFO("%d", i);
+            fflush(stdout);
+            sleep(1);
+        }
+        ROS_INFO("Recording has started");
+        fflush(stdout);
+        const double start_time = ros::Time::now().toSec();
+
+        tf::TransformListener listener;
+        while (ros::ok() && ros::Time::now().toSec() - start_time <= duration)
+        {
+            Eigen::VectorXd col(feature.numJoints() * 3);
+
+            for (int i=0; i<feature.numJoints(); i++)
+            {
+                tf::StampedTransform transform;
+                while (ros::ok())
+                {
+                    try
+                    {
+                        listener.lookupTransform("map", feature.jointName(i).c_str(),
+                                                 ros::Time(0), transform);
+                        break;
+                    }
+                    catch (tf::TransformException ex)
+                    {
+                    }
+                }
+
+                tf::Vector3 tfx = transform.getOrigin();
+                const Eigen::Vector3d x(tfx.x(), tfx.y(), tfx.z());
+
+                col.block(3*i, 0, 3, 1) = x;
+            }
+
+            feature.addFrame(col);
+            feature.visualizeHumanMotion();
+            rate.sleep();
+        }
+
+        ROS_INFO("Recording complete");
+        feature.saveFeature(feature_filename);
+    }
+
+    for (int s=sequence_start; s<sequence_end; s++)
+    {
+        feature.clearFeature();
+
+        ROS_INFO("Recording action %d, sequence %d, duration %ds, rate %d", action_number, s, duration, param_rate);
+        fflush(stdout);
+
+        sprintf(feature_filename, "%s/V%02d/sequence%03d.txt", directory, action_number, s);
         FILE* fp = fopen(feature_filename, "w");
         if (fp == 0)
         {

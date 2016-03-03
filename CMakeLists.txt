@@ -61,6 +61,12 @@ src/validation.cpp
 )
 target_link_libraries(validation pcpred)
 
+# application for motion generator
+rosbuild_add_executable(motion_generator
+src/motion_generator.cpp
+)
+target_link_libraries(motion_generator pcpred)
+
 # application for openni recorded tf publisher
 rosbuild_add_executable(playback
 src/playback.cpp

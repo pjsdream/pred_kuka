@@ -63,6 +63,7 @@ int main(int argc, char** argv)
     }
     fclose(hfp);
 
+    /*
     char trained_filename[128];
     sprintf(trained_filename, "%s/trained.txt", directory);
     FILE* ofp = fopen(trained_filename, "r");
@@ -72,6 +73,7 @@ int main(int argc, char** argv)
         return 0;
     }
     fclose(ofp);
+    */
 
     char benchmark_filename[128];
     sprintf(benchmark_filename, "%s/../benchmark%02d.txt", directory, benchmark_number);
@@ -107,8 +109,8 @@ int main(int argc, char** argv)
     ROS_INFO("Learning start"); fflush(stdout);
     start_time = ros::Time::now().toSec();
     trained_motion.learn(directory);
-    ROS_INFO("Laerning complete in %lf sec\n", ros::Time::now().toSec() - start_time); fflush(stdout);
-    trained_motion.saveTrainedData(trained_filename);
+    ROS_INFO("Learning complete in %lf sec\n", ros::Time::now().toSec() - start_time); fflush(stdout);
+    //trained_motion.saveTrainedData(trained_filename);
 
     HumanMotionFeature feature;
     feature.setVisualizerTopic("human_motion");
@@ -128,17 +130,22 @@ int main(int argc, char** argv)
         Eigen::MatrixXd ksi = generator.getEpisodeMatrix();
         Eigen::VectorXi actions = generator.getEpisodeActions();
 
-        for (int i=0; i<ksi.cols() - 15; i++)
+        for (int i=0; i<learning_options.input_frames - 1; i++)
+            state |= 1 << actions(i);
+
+        for (int i=learning_options.input_frames - 1; i<ksi.cols(); i++)
         {
+            state |= 1 << actions(i);
+
             feature.clearFeature();
 
-            for (int j=0; j<15; j++)
-                feature.addFrame(ksi.col(i+j));
+            for (int j=0; j<learning_options.input_frames; j++)
+                feature.addFrame(ksi.col(i - learning_options.input_frames + 1 + j));
 
-            trained_motion.infer(feature.columnFeature(), state);
+            trained_motion.infer(feature.columnFeature(), state, actions(i));
             trained_motion.visualizeInferenceResult();
 
-            feature.visualizeHumanMotion();
+            feature.visualizeCurrentHumanMotion();
 
             rate.sleep();
         }

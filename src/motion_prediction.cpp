@@ -93,11 +93,13 @@ int main(int argc, char** argv)
     //trained_motion.loadTrainedData(trained_filename);
 
     // train
+    /*
     ROS_INFO("Learning start"); fflush(stdout);
     start_time = ros::Time::now().toSec();
     trained_motion.learn(directory);
     ROS_INFO("Laerning complete in %lf sec\n", ros::Time::now().toSec() - start_time); fflush(stdout);
     trained_motion.saveTrainedData(trained_filename);
+    */
 
     HumanMotionFeature feature;
     feature.setVisualizerTopic("human_motion");
@@ -137,14 +139,13 @@ int main(int argc, char** argv)
             const Eigen::Vector3d x(tfx.x(), tfx.y(), tfx.z());
 
             col.block(3*i, 0, 3, 1) = x;
-
-            std::cout << feature.jointName(i) << ' ' << x.transpose() << std::endl;
         }
 
         feature.addFrame(col);
-        feature.retainLastFrames(15);
+        feature.retainLastFrames(1);
         feature.visualizeHumanMotion();
 
+        /*
         if (feature.numFrames() >= 15)
         {
             ROS_INFO("Inference start");
@@ -152,8 +153,9 @@ int main(int argc, char** argv)
             trained_motion.infer(feature.columnFeature(), state);
             ROS_INFO("Inferen ce completed in %lf sec\n", ros::Time::now().toSec() - start_time); fflush(stdout);
 
-            trained_motion.visualizeInferenceResult();
+            trained_motion.visualizeInferenceResult(state);
         }
+        */
 
 
         rate.sleep();

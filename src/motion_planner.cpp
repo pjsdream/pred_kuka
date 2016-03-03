@@ -55,6 +55,39 @@ static const int M = 8;
 static int PLANNER_INDEX = -1;
 
 
+void readStartGoalStates(const char* filename, std::vector<robot_state::RobotState>& robot_states)
+{
+    FILE* fp = fopen(filename, "r");
+
+    for (int i=0; i<robot_states.size(); i++)
+    {
+        for (int j=0; j<robot_states[i].getVariableCount(); j++)
+        {
+            double v;
+            fscanf(fp, "%lf", &v);
+            robot_states[i].setVariablePosition(j, v);
+        }
+        robot_states[i].update();
+    }
+
+    fclose(fp);
+}
+
+void writeStartGoalStates(const char* filename, const std::vector<robot_state::RobotState>& robot_states)
+{
+    FILE* fp = fopen(filename, "w");
+
+    for (int i=0; i<robot_states.size(); i++)
+    {
+        for (int j=0; j<robot_states[i].getVariableCount(); j++)
+            fprintf(fp, "%lf ", robot_states[i].getVariablePosition(j));
+        fprintf(fp, "\n");
+    }
+
+    fclose(fp);
+}
+
+
 
 static std::queue<int> requests;
 static void callbackPlanningRequest(const std_msgs::Int32::ConstPtr& msg)
@@ -260,7 +293,7 @@ void MoveKukaIIWA::run(const std::string& group_name)
         time *= discretization;
 
         std_msgs::Float64 planning_time;
-        planning_time.data = time - expected_time;
+        planning_time.data = time;
         ROS_INFO("Planning time = %lf", planning_time.data);
         planning_time_publisher_.publish(planning_time);
     }
@@ -309,13 +342,13 @@ bool MoveKukaIIWA::initTask(std::vector<Eigen::Affine3d>& end_effector_poses, st
 
 
     const bool read_from_file = false;
-    const char filename[] = "6-2.txt";
+    const char filename[] = "6.txt";
 
     robot_states.resize(end_effector_poses.size(), start_state);
 
     if (read_from_file)
     {
-        //readStartGoalStates(filename, robot_states);
+        readStartGoalStates(filename, robot_states);
     }
 
     else
@@ -513,7 +546,7 @@ void MoveKukaIIWA::loadActions()
 {
     std::vector<double> actions;
     node_handle_.getParam("/itomp_planner/action_positions", actions);
-    for (int i=0; i<actions.size() / 3; i++)
+    for (int i=0; i<actions.size() / 3 && i < 4; i++)
         action_targets_.push_back( Eigen::Vector3d( actions[3*i+0], actions[3*i+1], actions[3*i+2] ) );
 
     node_handle_.getParam("/itomp_planner/source_position", actions);
